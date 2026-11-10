@@ -1,0 +1,25 @@
+# Datasets and everything generated from them (far too large for GitHub)
+data/raw/
+data/flows/
+data/processed/
+artifacts/
+results/
+*.pcap
+*.pcapng
+*.parquet
+*.npy
+*.npz
+*.pt
+*.safetensors
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+*.egg-info/
+
+# Secrets
+.env

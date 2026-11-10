@@ -1,0 +1,97 @@
+# DELLM configuration. Paths are relative to `paths.root`.
+paths:
+  root: .
+  raw: data/raw            # downloaded datasets (not committed)
+  flows: data/flows        # CICFlowMeter CSVs produced by 01_extract_flows.py
+  processed: data/processed
+  artifacts: artifacts     # trained models, thresholds, tokens, sequences
+  results: results
+
+seed: 0
+split: [0.7, 0.1, 0.2]     # train / val / test, chronological per label
+max_rows_per_file: null    # e.g. 200000 to develop on a laptop; null = all rows
+
+# ---------------------------------------------------------------------------
+# Datasets. `files` are glob patterns of CICFlowMeter-style CSVs.
+# label_from_folder: true  -> label = name of the folder holding each CSV
+#                            (use for per-attack PCAPs converted by script 01)
+# label_column: name of the label column when the CSV already has labels.
+# extra_rules: optional [regex, class] pairs checked before the built-in rules.
+# ---------------------------------------------------------------------------
+clusters:
+  C1:
+    dataset: Edge-IIoTset
+    files: ["data/flows/Edge-IIoTset/**/*.csv"]
+    label_from_folder: true
+  C2:
+    dataset: CICIoT2023
+    files: ["data/flows/CICIoT2023/**/*.csv"]
+    label_from_folder: true
+  C3:
+    dataset: CIC-DDoS2019+CIC-IDS2017
+    files: ["data/raw/CIC-DDoS2019/**/*.csv", "data/raw/CIC-IDS2017/*Monday*.csv"]
+    label_column: label
+  C4:
+    dataset: BCCC-IoT-MQTT-IDS-2025
+    files: ["data/flows/BCCC-IoT-MQTT-IDS-2025/**/*.csv"]
+    label_from_folder: true
+    extra_rules:
+      - ["flood|ddos|dos|connect|publish|slowite", "MQTT_DDoS"]
+
+test_only:
+  SDN-SlowRate-DDoS: {cluster: C3, files: ["data/flows/SDN-SlowRate-DDoS/**/*.csv"], label_from_folder: true}
+  AdDDoSDN:          {cluster: C3, files: ["data/raw/AdDDoSDN/**/*.csv"], label_column: label}
+  DDoS-AT-2022:      {cluster: C3, files: ["data/raw/DDoS-AT-2022/**/*.csv"], label_column: label}
+  LowRate-MQTT:      {cluster: C4, files: ["data/flows/LowRate-MQTT/**/*.csv"], label_from_folder: true,
+                      extra_rules: [["low|slow|ddos|attack", "MQTT_DDoS"]]}
+
+features:
+  n_features: 12
+  min_clusters: 3          # keep features accepted by Boruta in >= this many clusters
+  corr_threshold: 0.95
+  boruta_sample: 50000     # rows per cluster used for Boruta
+  boruta_max_iter: 50
+
+edge:
+  n_models: 3
+  hidden: 64
+  epochs: 30
+  batch_size: 1024
+  lr: 0.001
+  patience: 5
+  eps: 0.01                # max error on flows kept at the edge
+  budget: 0.10             # max share of flows uploaded
+  audit_rate: 0.01
+  trigger:
+    window: 2.0
+    percentile: 99.0
+    spike_ratio: 3.0
+    history: 30
+
+cloud:
+  backbone: meta-llama/Llama-3.1-8B     # 1B: meta-llama/Llama-3.2-1B (develop with this)
+  seq_len: 64
+  max_flows: 1024
+  max_wait: 1.0
+  min_group: 16
+  use_lora: true
+  lora_r: 8
+  lora_alpha: 16
+  lora_dropout: 0.05
+  dtype: bfloat16
+  load_in_4bit: false      # true = QLoRA, fits 8B on ~10-12 GB
+  gradient_checkpointing: true
+  no_llm: false            # ablation: projection -> head without the LLM
+  lr: 0.0002
+  weight_decay: 0.01
+  batch_size: 8            # sequences per step
+  grad_accum: 1
+  epochs: 20
+  patience: 5
+  warmup_frac: 0.03
+  full_vs_filtered: 0.5    # share of training sequences built from ALL flows (rest: edge-uploaded only)
+
+attribution:
+  min_sources_spoof: 100
+  spoof_frac: 0.9
+  attacker_ips: {}         # optional {dataset: [ip, ...]} for compromised-device precision/recall
